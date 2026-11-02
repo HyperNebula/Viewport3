@@ -15,6 +15,8 @@ export class AudiusPlayer {
     this.tracks = [];
     this.currentTrackIndex = 0;
     this.isPlaying = false;
+    this.isLoading = false;
+    this.trackRequestController = null;
     this.audioEl = new Audio();
     this.audioEl.crossOrigin = 'anonymous';
 
@@ -59,40 +61,19 @@ export class AudiusPlayer {
 
     // Genre Mappings for Audius
     this.GENRE_MAP = {
-      lofi: { name: 'Lo-Fi Beats', query: 'Lo-fi' },
-      synthwave: { name: 'Synthwave / Cyberpunk', query: 'Synthwave' },
-      ambient: { name: 'Ambient & Drone', query: 'Ambient' },
-      techno: { name: 'Deep Focus / Techno', query: 'Techno' },
-      chiptune: { name: 'Chiptune / 8-bit', query: 'Electronic' }
+      lofi: { name: 'Lo-Fi Beats', genre: 'Lo-Fi' },
+      synthwave: { name: 'Synthwave / Cyberpunk', search: 'synthwave' },
+      ambient: { name: 'Ambient & Drone', genre: 'Ambient' },
+      techno: { name: 'Deep Focus / Techno', genre: 'Techno' },
+      chiptune: { name: 'Chiptune / 8-bit', genre: 'Electronic' },
+      jazz: { name: 'Jazz', genre: 'Jazz' },
+      classical: { name: 'Classical', genre: 'Classical' },
+      downtempo: { name: 'Downtempo', genre: 'Downtempo' },
+      deep_house: { name: 'Deep House', genre: 'Deep House' },
+      drum_bass: { name: 'Drum & Bass', genre: 'Drum & Bass' }
     };
 
-    // Curated Fallback Tracks in case API is slow or offline
-    this.FALLBACK_TRACKS = [
-      {
-        id: 'fallback_1',
-        title: 'Sample track 1',
-        artist: 'Sample artist',
-        duration: 184,
-        artwork: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%231e293b"/><circle cx="50" cy="50" r="30" fill="%2338bdf8" opacity="0.8"/></svg>',
-        streamUrl: ''
-      },
-      {
-        id: 'fallback_2',
-        title: 'Sample track 2',
-        artist: 'Sample artist',
-        duration: 215,
-        artwork: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23111827"/><circle cx="50" cy="50" r="30" fill="%23f43f5e" opacity="0.8"/></svg>',
-        streamUrl: ''
-      },
-      {
-        id: 'fallback_3',
-        title: 'Sample track 3',
-        artist: 'Sample artist',
-        duration: 240,
-        artwork: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%230f172a"/><circle cx="50" cy="50" r="30" fill="%2310b981" opacity="0.8"/></svg>',
-        streamUrl: ''
-      }
-    ];
+    this.defaultArtwork = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%231e293b"/><circle cx="50" cy="50" r="30" fill="%2338bdf8" opacity="0.8"/></svg>';
 
     this.init();
   }
@@ -100,13 +81,6 @@ export class AudiusPlayer {
   async init() {
     this.bindEvents();
     this.updateVolume();
-
-    // Initial tracks
-    this.tracks = [...this.FALLBACK_TRACKS];
-    this.displayTrack(this.tracks[0]);
-
-    // Fetch live trending tracks from Audius
-    await this.fetchTracks();
 
     // Start Visualizer loop
     this.initVisualizer();
@@ -125,6 +99,8 @@ export class AudiusPlayer {
         }
       });
     }
+
+    await this.fetchTracks();
   }
 
   bindEvents() {
@@ -140,13 +116,7 @@ export class AudiusPlayer {
       this.timeTotalEl.textContent = this.formatTime(this.audioEl.duration);
       this.seekBar.max = Math.floor(this.audioEl.duration).toString();
     });
-    this.audioEl.addEventListener('error', e => {
-      console.warn('Audio streaming notice: Falling back to ambient mode or next track.', e);
-      // If stream fails, switch to next track or ambient
-      if (this.sourceMode === 'audius') {
-        this.nextTrack();
-      }
-    });
+    this.audioEl.addEventListener('error', () => this.handlePlaybackError(this.audioEl.error));
 
     // Seek bar
     this.seekBar.addEventListener('input', () => {
@@ -173,9 +143,12 @@ export class AudiusPlayer {
     if (this.genreSelect) {
       this.genreSelect.value = this.activeGenre;
       this.genreSelect.addEventListener('change', () => {
+        const wasPlaying = this.isPlaying;
+        this.pause();
+        if (this.sourceMode === 'ambient') this.toggleSourceMode();
         this.activeGenre = this.genreSelect.value;
         localStorage.setItem('v3_audius_genre', this.activeGenre);
-        this.fetchTracks();
+        this.fetchTracks(wasPlaying);
       });
     }
 
@@ -235,49 +208,86 @@ export class AudiusPlayer {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  async fetchTracks() {
+  async fetchTracks(resumePlayback = false) {
+    this.trackRequestController?.abort();
+    const controller = new AbortController();
+    this.trackRequestController = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     const genreConfig = this.GENRE_MAP[this.activeGenre] || this.GENRE_MAP.lofi;
-    const url = `${this.discoveryHost}/v1/tracks/trending?app_name=viewport3&genre=${encodeURIComponent(genreConfig.query)}&limit=15`;
+    const endpoint = genreConfig.search ? 'search' : 'trending';
+    const params = new URLSearchParams({ app_name: 'viewport3', limit: '15' });
+    params.set(genreConfig.search ? 'query' : 'genre', genreConfig.search || genreConfig.genre);
+    const url = `${this.discoveryHost}/v1/tracks/${endpoint}?${params}`;
+
+    this.pause();
+    this.isLoading = true;
+    this.tracks = [];
+    this.currentTrackIndex = 0;
+    this.audioEl.removeAttribute('src');
+    this.audioEl.load();
+    if (this.sourceMode === 'audius') this.showTrackStatus('Loading tracks...', '');
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-
       const resp = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeoutId);
-
       if (!resp.ok) throw new Error(`HTTP error ${resp.status}`);
       const data = await resp.json();
+      if (this.trackRequestController !== controller) return;
 
-      if (data && data.data && data.data.length > 0) {
-        this.tracks = data.data.map(t => {
-          let artwork = '';
-          if (t.artwork) {
-            artwork = t.artwork['480x480'] || t.artwork['150x150'] || Object.values(t.artwork)[0] || '';
-          }
-          return {
-            id: t.id,
-            title: t.title || 'Untitled Track',
-            artist: (t.user && t.user.name) ? t.user.name : 'Unknown Artist',
-            duration: t.duration || 180,
-            artwork: artwork || this.FALLBACK_TRACKS[0].artwork,
-            streamUrl: `${this.discoveryHost}/v1/tracks/${t.id}/stream?app_name=viewport3`
-          };
-        });
+      const playableTracks = Array.isArray(data?.data) ? data.data.filter(t =>
+        t && t.id && t.is_streamable && t.access?.stream !== false && !t.is_stream_gated
+      ) : [];
+      if (playableTracks.length === 0) throw new Error('No playable tracks returned');
 
-        this.currentTrackIndex = 0;
-        this.displayTrack(this.tracks[0]);
-      }
+      this.tracks = playableTracks.map(t => {
+        let artwork = '';
+        if (t.artwork) {
+          artwork = t.artwork['480x480'] || t.artwork['150x150'] || Object.values(t.artwork)[0] || '';
+        }
+        return {
+          id: t.id,
+          title: t.title || 'Untitled Track',
+          artist: (t.user && t.user.name) ? t.user.name : 'Unknown Artist',
+          duration: t.duration || 180,
+          artwork: artwork || this.defaultArtwork,
+          streamUrl: `${this.discoveryHost}/v1/tracks/${t.id}/stream?app_name=viewport3`
+        };
+      });
+
+      if (this.sourceMode === 'audius') this.displayTrack(this.tracks[0]);
     } catch (err) {
-      console.info('Audius live feed unavailable or offline; using curated ambient & lofi library.', err.message);
-      // Fallback tracks stay active
-      this.tracks = [...this.FALLBACK_TRACKS];
-      this.displayTrack(this.tracks[0]);
+      if (this.trackRequestController !== controller) return;
+      console.warn('Audius tracks unavailable:', err.message);
+      if (this.sourceMode === 'audius') {
+        this.showTrackStatus('No tracks available', 'Try another genre or use ambient sound.');
+      }
+    } finally {
+      clearTimeout(timeoutId);
+      if (this.trackRequestController === controller) {
+        this.trackRequestController = null;
+        this.isLoading = false;
+      }
     }
+
+    if (resumePlayback && this.tracks.length > 0 && this.sourceMode === 'audius') this.play();
+  }
+
+  showTrackStatus(title, message) {
+    this.titleEl.textContent = title;
+    this.artistEl.textContent = message;
+    this.genreBadgeEl.textContent = (this.GENRE_MAP[this.activeGenre] || this.GENRE_MAP.lofi).name;
+    this.artImgEl.src = this.defaultArtwork;
+    this.timeCurrentEl.textContent = '00:00';
+    this.timeTotalEl.textContent = '00:00';
+    this.seekBar.value = '0';
+    this.seekBar.max = '0';
   }
 
   displayTrack(track) {
-    if (!track) return;
+    if (!track) {
+      this.showTrackStatus(this.isLoading ? 'Loading tracks...' : 'No tracks available',
+        this.isLoading ? '' : 'Try another genre or use ambient sound.');
+      return;
+    }
     this.titleEl.textContent = track.title;
     this.artistEl.textContent = track.artist;
     this.genreBadgeEl.textContent = this.sourceMode === 'ambient'
@@ -288,7 +298,7 @@ export class AudiusPlayer {
       this.artImgEl.src = track.artwork;
       this.artImgEl.style.display = 'block';
     } else {
-      this.artImgEl.src = this.FALLBACK_TRACKS[0].artwork;
+      this.artImgEl.src = this.defaultArtwork;
     }
 
     this.timeCurrentEl.textContent = '00:00';
@@ -330,6 +340,7 @@ export class AudiusPlayer {
   }
 
   play() {
+    if (this.sourceMode === 'audius' && (this.isLoading || !this.tracks[this.currentTrackIndex]?.streamUrl)) return;
     this.isPlaying = true;
     this.updatePlayBtnState(true);
     this.artWrapperEl.classList.add('playing');
@@ -343,14 +354,20 @@ export class AudiusPlayer {
           this.audioEl.src = cur.streamUrl;
         }
         this.audioEl.play().catch(err => {
-          console.warn('Audio playback error (trying fallback ambient):', err);
-          this.toggleSourceMode();
+          if (err.name === 'AbortError' || this.sourceMode !== 'audius' || this.audioEl.src !== cur.streamUrl) return;
+          this.handlePlaybackError(err);
         });
-      } else {
-        // Fallback track without stream url: switch to ambient synth
-        this.toggleSourceMode();
       }
     }
+  }
+
+  handlePlaybackError(error) {
+    if (this.sourceMode !== 'audius' || !this.isPlaying) return;
+    console.warn('Audio playback error:', error);
+    this.pause();
+    this.artistEl.textContent = error?.name === 'NotAllowedError'
+      ? 'Press Play to start audio.'
+      : 'Unable to play this track. Try Next or ambient sound.';
   }
 
   pause() {
@@ -418,7 +435,7 @@ export class AudiusPlayer {
   }
 
   prevTrack() {
-    if (this.sourceMode === 'ambient') return;
+    if (this.sourceMode === 'ambient' || this.tracks.length === 0) return;
     this.currentTrackIndex = (this.currentTrackIndex - 1 + this.tracks.length) % this.tracks.length;
     const track = this.tracks[this.currentTrackIndex];
     this.displayTrack(track);
@@ -428,7 +445,7 @@ export class AudiusPlayer {
   }
 
   nextTrack() {
-    if (this.sourceMode === 'ambient') return;
+    if (this.sourceMode === 'ambient' || this.tracks.length === 0) return;
     this.currentTrackIndex = (this.currentTrackIndex + 1) % this.tracks.length;
     const track = this.tracks[this.currentTrackIndex];
     this.displayTrack(track);

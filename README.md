@@ -32,7 +32,7 @@
 - **Daily Focus Tracking**: Preserves total minutes and completed sessions in `localStorage`.
 
 ### 2. Audius Focus Music & Ambient Synthesizer
-- **Zero API Key Stream**: Queries public Audius discovery nodes (`api.audius.co/v1`) for curated coding genres (*Lo-Fi Beats, Synthwave / Cyberpunk, Ambient & Drone, Deep Focus Techno, Chiptune*).
+- **Zero API Key Stream**: Queries public Audius discovery nodes (`api.audius.co/v1`) for music across ten listening options: *Lo-Fi Beats, Synthwave / Cyberpunk, Ambient & Drone, Deep Focus / Techno, Chiptune / 8-bit, Jazz, Classical, Downtempo, Deep House, and Drum & Bass*.
 - **Offline Ambient Synthesizer**: Generative Web Audio API noise generator featuring *Binaural Rain & Storm, Brown Noise, Pink Noise, and White Noise*.
 - **Subtle Audio Visualizer**: Live canvas-based frequency spectrum bar visualizer.
 - **Playback Controls**: Seekbar, volume slider with mute, prev/next track, auto-advance on track completion.
