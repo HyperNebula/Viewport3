@@ -142,8 +142,9 @@ export class NewsFeed {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 7000);
 
-      // Top stories list
-      const topUrl = 'https://hacker-news.firebaseio.com/v0/topstories.json?limitToFirst=10';
+      // Fetch the ranked ID list, then select five locally. Firebase rejects
+      // limitToFirst without orderBy, and HN exposes this list as an array.
+      const topUrl = 'https://hacker-news.firebaseio.com/v0/topstories.json';
       const topResp = await fetch(topUrl, { signal: controller.signal });
       clearTimeout(timeoutId);
 
