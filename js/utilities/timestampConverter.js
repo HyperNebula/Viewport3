@@ -40,7 +40,7 @@ export function initTimestampConverter(container) {
         <div class="ts-input-row">
           <div class="input-labeled">
             <span class="input-prefix">Timestamp</span>
-            <input type="text" id="ts-input-val" class="code-input" placeholder="e.g. 1772548000 or 1772548000000">
+            <input type="text" id="ts-input-val" class="code-input" placeholder="Enter seconds or milliseconds...">
           </div>
           <div class="btn-group">
             <button id="ts-set-now-btn" class="btn btn-sm btn-secondary">Now</button>

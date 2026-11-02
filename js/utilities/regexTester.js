@@ -28,7 +28,7 @@ export function initRegexTester(container) {
       <div class="regex-pattern-row">
         <div class="regex-input-group">
           <span class="regex-delim">/</span>
-          <input type="text" id="regex-pattern" class="regex-pattern-input" placeholder="Enter regex pattern (e.g. ([a-z]+)@([a-z.]+))" spellcheck="false" value="([a-zA-Z0-9._-]+)@([a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})">
+          <input type="text" id="regex-pattern" class="regex-pattern-input" placeholder="Enter a pattern..." spellcheck="false" value="([a-zA-Z0-9._-]+)@([a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})">
           <span class="regex-delim">/</span>
         </div>
         <div class="regex-flags-group">
@@ -45,8 +45,8 @@ export function initRegexTester(container) {
       <!-- Test String Editor -->
       <div class="regex-test-section">
         <label class="util-section-label">Test Text</label>
-        <textarea id="regex-test-text" class="code-textarea" rows="4" placeholder="Enter string to test regex against..." spellcheck="false">Contact team at hello@viewport3.dev or lead-eng@subdomain.tech-co.org.
-Follow updates from founder@antigravity.io.</textarea>
+        <textarea id="regex-test-text" class="code-textarea" rows="4" placeholder="Enter text to match..." spellcheck="false">user@example.com
+other@example.org</textarea>
       </div>
 
       <!-- Match Visualizer -->
@@ -101,32 +101,32 @@ Follow updates from founder@antigravity.io.</textarea>
     email: {
       pattern: '([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})',
       flags: { g: true, i: true, m: false, s: false, u: false },
-      test: 'Send your feedback to support@viewport3.app or contact developer-admin@company.io today.'
+      test: 'user@example.com other@example.org'
     },
     url: {
       pattern: 'https?:\\/\\/([\\w.-]+)(:[0-9]+)?(\\/[^\\s]*)?',
       flags: { g: true, i: true, m: false, s: false, u: false },
-      test: 'Check out https://api.audius.co/v1/tracks or visit http://localhost:8080/dashboard?view=grid.'
+      test: 'https://example.com http://example.org/path'
     },
     ipv4: {
       pattern: '\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b',
       flags: { g: true, i: false, m: false, s: false, u: false },
-      test: 'Default gateway: 192.168.1.1, DNS servers: 8.8.8.8 and 1.1.1.1. Localhost: 127.0.0.1.'
+      test: '192.0.2.1 198.51.100.2 203.0.113.3'
     },
     uuid: {
       pattern: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}',
       flags: { g: true, i: true, m: false, s: false, u: false },
-      test: 'Session ID: c3a4e98f-410a-4a27-a00e-e5e6628b7a42 and Task ID: 8a55a638-00b9-4edd-9f78-99abaef6f976.'
+      test: 'c3a4e98f-410a-4a27-a00e-e5e6628b7a42 8a55a638-00b9-4edd-9f78-99abaef6f976'
     },
     isodate: {
       pattern: '(\\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])(?:T(\\d{2}):(\\d{2}):(\\d{2}))?',
       flags: { g: true, i: false, m: false, s: false, u: false },
-      test: 'Release date: 2026-11-02T14:30:00, previous patch was released on 2026-10-15.'
+      test: '2024-01-01T12:00:00 2024-01-02'
     },
     hex: {
       pattern: '#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})\\b',
       flags: { g: true, i: true, m: false, s: false, u: false },
-      test: 'OLED background: #07080b, accent cyan: #38bdf8, secondary: #10b981, white: #fff.'
+      test: '#123456 #abcdef #fff'
     }
   };
 

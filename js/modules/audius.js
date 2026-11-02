@@ -70,24 +70,24 @@ export class AudiusPlayer {
     this.FALLBACK_TRACKS = [
       {
         id: 'fallback_1',
-        title: 'Midnight Code Session',
-        artist: 'LofiCoder',
+        title: 'Sample track 1',
+        artist: 'Sample artist',
         duration: 184,
         artwork: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%231e293b"/><circle cx="50" cy="50" r="30" fill="%2338bdf8" opacity="0.8"/></svg>',
         streamUrl: ''
       },
       {
         id: 'fallback_2',
-        title: 'Cyberpunk Neon Rain',
-        artist: 'GlitchHop Collective',
+        title: 'Sample track 2',
+        artist: 'Sample artist',
         duration: 215,
         artwork: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23111827"/><circle cx="50" cy="50" r="30" fill="%23f43f5e" opacity="0.8"/></svg>',
         streamUrl: ''
       },
       {
         id: 'fallback_3',
-        title: 'Deep Thought Synapses',
-        artist: 'NeuralWave',
+        title: 'Sample track 3',
+        artist: 'Sample artist',
         duration: 240,
         artwork: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%230f172a"/><circle cx="50" cy="50" r="30" fill="%2310b981" opacity="0.8"/></svg>',
         streamUrl: ''

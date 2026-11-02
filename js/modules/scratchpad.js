@@ -35,16 +35,14 @@ export class Scratchpad {
     if (saved !== null) {
       this.textarea.value = saved;
     } else {
-      // Friendly default onboarding note
-      this.textarea.value = `# Viewport3 Scratchpad
-- Quick ideas, scratch dumps, and code snippets
-- Auto-saved to localStorage on every keystroke
-- Press Tab to indent with 2 spaces
-- Supports quick templates (TODOs, Meeting log, Code)
+      // Generic starting note
+      this.textarea.value = `# Notes
 
-[ ] Review PR #412
-[ ] Test Flowmodoro 5:1 ratio
-[ ] Deploy to secondary display`;
+Write your notes here.
+
+- [ ] Task 1
+- [ ] Task 2
+- [ ] Task 3`;
     }
   }
 
@@ -191,7 +189,7 @@ export class Scratchpad {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     a.href = url;
-    a.download = `viewport3-notes-${dateStr}.md`;
+    a.download = `notes-${dateStr}.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -206,13 +204,13 @@ export class Scratchpad {
     let snippet = '';
     switch (templateName) {
       case 'todo':
-        snippet = `\n## TODO (${dateStr})\n- [ ] Priority item 1\n- [ ] Priority item 2\n- [ ] Code review\n- [ ] Deploy\n`;
+        snippet = `\n## Tasks (${dateStr})\n- [ ] Task 1\n- [ ] Task 2\n- [ ] Task 3\n`;
         break;
       case 'meeting':
         snippet = `\n## Log: ${dateStr} ${timeStr}\n- **Participants:** \n- **Objectives:** \n- **Key Decisions:** \n- **Action Items:** \n  - [ ] \n`;
         break;
       case 'code':
-        snippet = `\n\`\`\`javascript\n// Quick snippet\nfunction solution() {\n  return true;\n}\n\`\`\`\n`;
+        snippet = `\n\`\`\`\n\n\`\`\`\n`;
         break;
       case 'timestamp':
         snippet = `\n--- [${dateStr} ${timeStr}] ---\n`;

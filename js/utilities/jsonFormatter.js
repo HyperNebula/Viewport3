@@ -32,7 +32,7 @@ export function initJsonFormatter(container) {
       </div>
 
       <div class="util-editor-wrapper">
-        <textarea id="json-input" class="code-textarea" placeholder="Paste or type raw JSON here..." spellcheck="false"></textarea>
+        <textarea id="json-input" class="code-textarea" placeholder="Enter JSON..." spellcheck="false"></textarea>
       </div>
 
       <div id="json-status" class="util-status-bar">
@@ -153,23 +153,15 @@ export function initJsonFormatter(container) {
 
   sampleBtn.addEventListener('click', () => {
     const sample = {
-      project: "Viewport3",
-      tagline: "Secondary Monitor Developer Dashboard",
-      version: "1.0.0",
-      theme: "oled-dark",
-      features: [
-        "Flowmodoro timer with music auto-pause",
-        "Zero-key Audius stream + Web Audio ambient backup",
-        "Monospace persistent scratchpad",
-        "Hacker News top programming radar",
-        "Sliding developer micro-utilities"
-      ],
-      metrics: {
-        dailyGoalMinutes: 120,
-        flowRatio: "5:1",
-        soundAlerts: true
+      name: "Example",
+      count: 3,
+      enabled: true,
+      items: ["Item 1", "Item 2", "Item 3"],
+      settings: {
+        option: "value",
+        limit: 10
       },
-      offlineReady: true
+      metadata: null
     };
     inputEl.value = JSON.stringify(sample, null, 2);
     updateStats();

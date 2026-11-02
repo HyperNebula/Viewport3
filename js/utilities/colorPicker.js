@@ -58,7 +58,7 @@ export function initColorPicker(container) {
               <span id="contrast-ratio-white" class="contrast-ratio-val">--:1</span>
             </div>
             <div class="contrast-preview" style="background-color: #ffffff;">
-              <span class="preview-text" id="preview-text-on-white" style="color: #38bdf8;">Sample Text Preview</span>
+              <span class="preview-text" id="preview-text-on-white" style="color: #38bdf8;">Sample text</span>
             </div>
             <div class="contrast-badges">
               <span class="badge-wcag" id="badge-aa-norm-white">AA 4.5:1</span>
@@ -74,7 +74,7 @@ export function initColorPicker(container) {
               <span id="contrast-ratio-black" class="contrast-ratio-val">--:1</span>
             </div>
             <div class="contrast-preview" style="background-color: #0f1118;">
-              <span class="preview-text" id="preview-text-on-black" style="color: #38bdf8;">Sample Text Preview</span>
+              <span class="preview-text" id="preview-text-on-black" style="color: #38bdf8;">Sample text</span>
             </div>
             <div class="contrast-badges">
               <span class="badge-wcag" id="badge-aa-norm-black">AA 4.5:1</span>

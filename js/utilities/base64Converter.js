@@ -40,7 +40,7 @@ export function initBase64Converter(container) {
           <label class="util-section-label">Input</label>
           <span id="b64-input-stats" class="badge-count">0 chars</span>
         </div>
-        <textarea id="b64-input" class="code-textarea" rows="4" placeholder="Enter text or paste Base64..." spellcheck="false"></textarea>
+        <textarea id="b64-input" class="code-textarea" rows="4" placeholder="Enter text or Base64..." spellcheck="false"></textarea>
       </div>
 
       <!-- Output Textarea -->
@@ -260,6 +260,6 @@ export function initBase64Converter(container) {
   });
 
   // Initialize with sample text
-  inputEl.value = "Viewport3: High performance secondary monitor developer dashboard.";
+  inputEl.value = "Hello, world!";
   handleEncode();
 }
