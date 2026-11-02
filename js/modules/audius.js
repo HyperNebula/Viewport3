@@ -17,6 +17,11 @@ export class AudiusPlayer {
     this.isPlaying = false;
     this.isLoading = false;
     this.trackRequestController = null;
+    this.recentTracks = {};
+    try {
+      const history = JSON.parse(localStorage.getItem('v3_audius_recent_tracks') || '{}');
+      if (history && typeof history === 'object' && !Array.isArray(history)) this.recentTracks = history;
+    } catch {}
     this.audioEl = new Audio();
     this.audioEl.crossOrigin = 'anonymous';
 
@@ -52,6 +57,7 @@ export class AudiusPlayer {
     this.muteBtn = document.getElementById('audius-mute-btn');
 
     this.genreSelect = document.getElementById('audius-genre-select');
+    this.newMixBtn = document.getElementById('audius-new-mix-btn');
     this.sourceToggleBtn = document.getElementById('audius-source-toggle-btn');
     this.ambientControls = document.getElementById('audius-ambient-controls');
     this.ambientPills = document.querySelectorAll('.ambient-preset-pill');
@@ -143,14 +149,13 @@ export class AudiusPlayer {
     if (this.genreSelect) {
       this.genreSelect.value = this.activeGenre;
       this.genreSelect.addEventListener('change', () => {
-        const wasPlaying = this.isPlaying;
-        this.pause();
-        if (this.sourceMode === 'ambient') this.toggleSourceMode();
         this.activeGenre = this.genreSelect.value;
         localStorage.setItem('v3_audius_genre', this.activeGenre);
-        this.fetchTracks(wasPlaying);
+        this.newMix();
       });
     }
+
+    this.newMixBtn?.addEventListener('click', () => this.newMix());
 
     // Source toggle (Audius Stream <-> Web Audio Ambient Synth)
     if (this.sourceToggleBtn) {
@@ -208,6 +213,41 @@ export class AudiusPlayer {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
+  newMix() {
+    const wasPlaying = this.isPlaying;
+    this.pause();
+    if (this.sourceMode === 'ambient') this.toggleSourceMode();
+    return this.fetchTracks(wasPlaying);
+  }
+
+  selectMix(tracks) {
+    const shuffled = [...new Map(tracks.map(track => [String(track.id), track])).values()];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    const history = Array.isArray(this.recentTracks[this.activeGenre]) ? this.recentTracks[this.activeGenre] : [];
+    const heard = new Set(history);
+    const recent = new Set(history.slice(-15));
+    const unheard = shuffled.filter(track => !heard.has(String(track.id)));
+    const older = shuffled.filter(track => heard.has(String(track.id)) && !recent.has(String(track.id)));
+    const repeats = shuffled.filter(track => recent.has(String(track.id)));
+    const mix = [...unheard, ...older, ...repeats].slice(0, 15);
+
+    // Small catalogs can run out of alternatives; avoid repeating the last song immediately.
+    if (mix.length > 1 && String(mix[0].id) === history.at(-1)) [mix[0], mix[1]] = [mix[1], mix[0]];
+    return mix;
+  }
+
+  rememberTrack(id, genre) {
+    const history = Array.isArray(this.recentTracks[genre]) ? this.recentTracks[genre] : [];
+    this.recentTracks[genre] = [...history.filter(previous => previous !== String(id)), String(id)].slice(-100);
+    try {
+      localStorage.setItem('v3_audius_recent_tracks', JSON.stringify(this.recentTracks));
+    } catch {}
+  }
+
   async fetchTracks(resumePlayback = false) {
     this.trackRequestController?.abort();
     const controller = new AbortController();
@@ -215,7 +255,7 @@ export class AudiusPlayer {
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     const genreConfig = this.GENRE_MAP[this.activeGenre] || this.GENRE_MAP.lofi;
     const endpoint = genreConfig.search ? 'search' : 'trending';
-    const params = new URLSearchParams({ app_name: 'viewport3', limit: '15' });
+    const params = new URLSearchParams({ app_name: 'viewport3', limit: '100' });
     params.set(genreConfig.search ? 'query' : 'genre', genreConfig.search || genreConfig.genre);
     const url = `${this.discoveryHost}/v1/tracks/${endpoint}?${params}`;
 
@@ -238,7 +278,7 @@ export class AudiusPlayer {
       ) : [];
       if (playableTracks.length === 0) throw new Error('No playable tracks returned');
 
-      this.tracks = playableTracks.map(t => {
+      this.tracks = this.selectMix(playableTracks).map(t => {
         let artwork = '';
         if (t.artwork) {
           artwork = t.artwork['480x480'] || t.artwork['150x150'] || Object.values(t.artwork)[0] || '';
@@ -349,11 +389,14 @@ export class AudiusPlayer {
       this.startAmbientSynth();
     } else {
       const cur = this.tracks[this.currentTrackIndex];
+      const genre = this.activeGenre;
       if (cur && cur.streamUrl) {
         if (this.audioEl.src !== cur.streamUrl) {
           this.audioEl.src = cur.streamUrl;
         }
-        this.audioEl.play().catch(err => {
+        this.audioEl.play().then(() => {
+          if (this.sourceMode === 'audius' && this.audioEl.src === cur.streamUrl) this.rememberTrack(cur.id, genre);
+        }, err => {
           if (err.name === 'AbortError' || this.sourceMode !== 'audius' || this.audioEl.src !== cur.streamUrl) return;
           this.handlePlaybackError(err);
         });
@@ -446,7 +489,8 @@ export class AudiusPlayer {
 
   nextTrack() {
     if (this.sourceMode === 'ambient' || this.tracks.length === 0) return;
-    this.currentTrackIndex = (this.currentTrackIndex + 1) % this.tracks.length;
+    if (this.currentTrackIndex === this.tracks.length - 1) return this.fetchTracks(this.isPlaying);
+    this.currentTrackIndex++;
     const track = this.tracks[this.currentTrackIndex];
     this.displayTrack(track);
     if (this.isPlaying) {
