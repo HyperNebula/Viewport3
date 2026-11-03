@@ -19,8 +19,8 @@ export function initBase64Converter(container) {
       <!-- Options Toolbar -->
       <div class="util-toolbar">
         <div class="btn-group">
-          <button id="b64-encode-btn" class="btn btn-sm btn-primary">Encode Text $\rightarrow$ Base64</button>
-          <button id="b64-decode-btn" class="btn btn-sm btn-secondary">Decode Base64 $\rightarrow$ Text</button>
+          <button id="b64-encode-btn" class="btn btn-sm btn-primary">Encode Text &rarr; Base64</button>
+          <button id="b64-decode-btn" class="btn btn-sm btn-secondary">Decode Base64 &rarr; Text</button>
         </div>
         <div class="util-toolbar-right">
           <label class="flag-label" title="Replace + with -, / with _, and trim =">
