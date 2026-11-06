@@ -28,7 +28,7 @@
 - **Flowmodoro Paradigm**: Counts **UP** while in deep work. When you decide to take a break, it calculates your earned break duration proportionally (default 5:1 ratio: 50m focus $\rightarrow$ 10m break) and counts **DOWN**.
 - **Classic Pomodoro Toggle**: Switch to fixed 25/5 or 50/10 intervals at any time.
 - **Music Auto-Pause**: Automatically fades down and pauses Audius playback when a break starts.
-- **Harmonic Zen Bell Chime**: Synthesized dual-tone bell using the native Web Audio API (zero external audio files needed).
+- **Harmonic Zen Bell Chime**: A synthesized bell rings three times, two seconds apart, when focus or break time completes. Use **Test Zen Chime** in timer settings to preview the alert. Uses the native Web Audio API with no external audio files.
 - **Daily Focus Tracking**: Preserves total minutes and completed sessions in `localStorage`.
 - **Background Timing**: Measures elapsed time from timestamps, so hidden or minimized windows catch up correctly when browser callbacks resume. Classic focus and break transitions also account for time spent in the background. Alerts may be delayed while the browser suspends the page.
 

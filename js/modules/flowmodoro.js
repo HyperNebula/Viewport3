@@ -232,25 +232,36 @@ export class FlowmodoroTimer {
       // Harmonic bell overtone frequencies (D5 chord tone: 587.33Hz, 880Hz, 1174.66Hz)
       const freqs = [587.33, 880.0, 1174.66, 1760.0];
       const gains = [0.4, 0.25, 0.15, 0.08];
+      const ringCount = 3;
+      const ringSpacing = 2;
 
-      freqs.forEach((freq, i) => {
-        const osc = this.audioCtx.createOscillator();
-        const gainNode = this.audioCtx.createGain();
+      // Schedule all three rings on the audio clock so background-tab
+      // throttling cannot delay the individual repeats.
+      for (let ring = 0; ring < ringCount; ring++) {
+        const ringTime = now + ring * ringSpacing;
+        freqs.forEach((freq, i) => {
+          const osc = this.audioCtx.createOscillator();
+          const gainNode = this.audioCtx.createGain();
 
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, ringTime);
 
-        // Exponential decay envelope
-        gainNode.gain.setValueAtTime(0.001, now);
-        gainNode.gain.linearRampToValueAtTime(gains[i], now + 0.03 + (i * 0.01));
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 2.5 + (i * 0.4));
+          // Exponential decay envelope
+          gainNode.gain.setValueAtTime(0.001, ringTime);
+          gainNode.gain.linearRampToValueAtTime(gains[i], ringTime + 0.03 + (i * 0.01));
+          gainNode.gain.exponentialRampToValueAtTime(0.0001, ringTime + 2.5 + (i * 0.4));
 
-        osc.connect(gainNode);
-        gainNode.connect(this.audioCtx.destination);
+          osc.connect(gainNode);
+          gainNode.connect(this.audioCtx.destination);
+          osc.onended = () => {
+            osc.disconnect();
+            gainNode.disconnect();
+          };
 
-        osc.start(now);
-        osc.stop(now + 3.0);
-      });
+          osc.start(ringTime);
+          osc.stop(ringTime + 3.8);
+        });
+      }
     } catch (err) {
       console.warn('Web Audio chime synth warning:', err);
     }
