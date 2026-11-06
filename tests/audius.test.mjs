@@ -8,15 +8,19 @@ class Element extends EventTarget {
   innerHTML = '';
   style = {};
   classList = { add() {}, remove() {} };
+  matches() { return false; }
 }
 
 class AudioElement extends Element {
   src = '';
   currentTime = 0;
+  duration = 120;
+  error = null;
   playCalls = 0;
+  loadCalls = 0;
   play() { this.playCalls++; return Promise.resolve(); }
   pause() {}
-  load() {}
+  load() { this.loadCalls++; this.error = null; this.currentTime = 0; }
   removeAttribute(name) { if (name === 'src') this.src = ''; }
 }
 
@@ -49,7 +53,9 @@ function createPlayer(t) {
     });
   }
   t.mock.method(console, 'warn', () => {});
-  return new TestPlayer();
+  const player = new TestPlayer();
+  t.after(() => { player.cancelStreamPlayback(); player.cancelFade(); });
+  return player;
 }
 
 const track = (id = 'track-1', extra = {}) => ({
@@ -184,16 +190,20 @@ test('changing a music genre exits ambient mode and resumes the selected stream'
   assert.equal(player.audioEl.playCalls, 1);
 });
 
-test('a failed stream stops playback with an error instead of switching sources or looping', async t => {
+test('a failed stream retries the current song once then stops without switching sources or looping', async t => {
   const player = createPlayer(t);
   player.bindEvents();
   t.mock.method(globalThis, 'fetch', async () => response([track()]));
   await player.fetchTracks();
   player.play();
+  player.audioEl.error = { code: 2 };
+  player.audioEl.dispatchEvent(new Event('error'));
+  assert.equal(player.isPlaying, true);
+  player.audioEl.error = { code: 2 };
   player.audioEl.dispatchEvent(new Event('error'));
   assert.equal(player.isPlaying, false);
   assert.equal(player.sourceMode, 'audius');
-  assert.equal(player.audioEl.playCalls, 1);
+  assert.equal(player.audioEl.playCalls, 2);
   assert.match(player.artistEl.textContent, /Unable to play/);
 });
 
@@ -310,4 +320,181 @@ test('storage failures and malformed listening history do not prevent playback',
   await Promise.resolve();
   assert.equal(player.isPlaying, true);
   assert.deepEqual(player.recentTracks.lofi, ['track-1']);
+});
+
+test('a long pause reconnects the same song and restores the saved playback position', async t => {
+  const player = createPlayer(t);
+  let now = 1000000;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(globalThis, 'fetch', async () => response([track()]));
+  await player.fetchTracks();
+  player.play();
+  player.audioEl.currentTime = 42;
+  player.pause();
+  const loads = player.audioEl.loadCalls;
+  now += 5 * 60 * 1000;
+  player.play();
+  assert.equal(player.audioEl.loadCalls, loads + 1);
+  assert.ok(new URL(player.audioEl.src).searchParams.has('_resume'));
+  player.audioEl.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(player.audioEl.currentTime, 42);
+  assert.equal(player.currentTrackIndex, 0);
+  assert.equal(player.isPlaying, true);
+});
+
+test('a short pause keeps the existing stream and playback position', async t => {
+  const player = createPlayer(t);
+  t.mock.method(globalThis, 'fetch', async () => response([track()]));
+  await player.fetchTracks();
+  player.play();
+  player.audioEl.currentTime = 42;
+  player.pause();
+  const loads = player.audioEl.loadCalls;
+  const url = player.audioEl.src;
+  player.play();
+  assert.equal(player.audioEl.loadCalls, loads);
+  assert.equal(player.audioEl.src, url);
+  assert.equal(player.audioEl.currentTime, 42);
+});
+
+test('an error left on a paused media element is cleared before resuming the same song', async t => {
+  const player = createPlayer(t);
+  t.mock.method(globalThis, 'fetch', async () => response([track()]));
+  await player.fetchTracks();
+  player.play();
+  player.audioEl.currentTime = 37;
+  player.pause();
+  player.audioEl.error = { code: 2 };
+  player.play();
+  assert.equal(player.audioEl.error, null);
+  player.audioEl.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(player.audioEl.currentTime, 37);
+  assert.equal(player.isPlaying, true);
+});
+
+test('a rejected resume retries the same song from its position instead of requiring Next', async t => {
+  const player = createPlayer(t);
+  t.mock.method(globalThis, 'fetch', async () => response([track()]));
+  await player.fetchTracks();
+  player.play();
+  player.audioEl.currentTime = 42;
+  player.pause();
+  const normalPlay = player.audioEl.play.bind(player.audioEl);
+  let failed = false;
+  player.audioEl.play = () => {
+    if (!failed) { failed = true; return Promise.reject(new DOMException('Old stream failed', 'NotSupportedError')); }
+    return normalPlay();
+  };
+  player.play();
+  await Promise.resolve();
+  player.audioEl.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(player.audioEl.currentTime, 42);
+  assert.equal(player.currentTrackIndex, 0);
+  assert.equal(player.isPlaying, true);
+});
+
+test('a stalled resume reconnects once and its watchdog stops when audio advances', async t => {
+  const player = createPlayer(t);
+  player.bindEvents();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.method(globalThis, 'fetch', async () => response([track()]));
+  await player.fetchTracks();
+  player.play();
+  player.audioEl.currentTime = 42;
+  player.pause();
+  const loads = player.audioEl.loadCalls;
+  player.play();
+  t.mock.timers.tick(12000);
+  assert.equal(player.audioEl.loadCalls, loads + 1);
+  player.audioEl.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(player.audioEl.currentTime, 42);
+  player.audioEl.currentTime = 43;
+  player.audioEl.dispatchEvent(new Event('timeupdate'));
+  t.mock.timers.tick(12000);
+  assert.equal(player.isPlaying, true);
+  assert.equal(player.audioEl.loadCalls, loads + 1);
+});
+
+test('a persistently stalled stream stops after one retry', async t => {
+  const player = createPlayer(t);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.method(globalThis, 'fetch', async () => response([track()]));
+  await player.fetchTracks();
+  player.play();
+  t.mock.timers.tick(12000);
+  assert.equal(player.isPlaying, true);
+  t.mock.timers.tick(12000);
+  assert.equal(player.isPlaying, false);
+  assert.equal(player.audioEl.playCalls, 2);
+});
+
+test('delayed background timeupdate events do not reconnect audio that is still advancing', async t => {
+  const player = createPlayer(t);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.method(globalThis, 'fetch', async () => response([track()]));
+  await player.fetchTracks();
+  player.play();
+  const loads = player.audioEl.loadCalls;
+  player.audioEl.currentTime = 12;
+  t.mock.timers.tick(12000);
+  assert.equal(player.audioEl.loadCalls, loads);
+  assert.equal(player.isPlaying, true);
+});
+
+test('pausing during reconnection cancels playback and retains the pending seek for later', async t => {
+  const player = createPlayer(t);
+  let now = 1000000;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(globalThis, 'fetch', async () => response([track()]));
+  await player.fetchTracks();
+  player.play();
+  player.audioEl.currentTime = 42;
+  player.pause();
+  now += 60000;
+  player.play();
+  player.pause();
+  player.audioEl.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(player.isPlaying, false);
+  player.play();
+  player.audioEl.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(player.audioEl.currentTime, 42);
+});
+
+test('skipping during reconnection prevents the previous track from seeking or stopping the new song', async t => {
+  const player = createPlayer(t);
+  let now = 1000000;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(globalThis, 'fetch', async () => response([track('one'), track('two')]));
+  await player.fetchTracks();
+  player.play();
+  player.audioEl.currentTime = 42;
+  player.pause();
+  now += 60000;
+  let rejectOld;
+  player.audioEl.play = () => new Promise((resolve, reject) => { rejectOld = reject; });
+  player.play();
+  player.audioEl.play = () => Promise.resolve();
+  player.nextTrack();
+  const selected = player.tracks[player.currentTrackIndex].id;
+  player.audioEl.dispatchEvent(new Event('loadedmetadata'));
+  rejectOld(new DOMException('Old resource stopped', 'NotSupportedError'));
+  await Promise.resolve();
+  assert.equal(player.tracks[player.currentTrackIndex].id, selected);
+  assert.equal(player.audioEl.currentTime, 0);
+  assert.equal(player.isPlaying, true);
+});
+
+test('resuming playback cancels a delayed fade-out and restores the selected volume', async t => {
+  const player = createPlayer(t);
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  t.mock.method(globalThis, 'fetch', async () => response([track()]));
+  await player.fetchTracks();
+  player.play();
+  player.fadeOutAndPause(1000);
+  t.mock.timers.tick(500);
+  assert.ok(player.audioEl.volume < player.volume);
+  player.play();
+  t.mock.timers.tick(1000);
+  assert.equal(player.isPlaying, true);
+  assert.equal(player.audioEl.volume, player.volume);
 });

@@ -17,6 +17,12 @@ export class AudiusPlayer {
     this.isPlaying = false;
     this.isLoading = false;
     this.trackRequestController = null;
+    this.loadedStreamUrl = null;
+    this.pausedAt = null;
+    this.pausedPosition = 0;
+    this.streamPlayback = null;
+    this.streamRevision = 0;
+    this.fadeInterval = null;
     this.recentTracks = {};
     try {
       const history = JSON.parse(localStorage.getItem('v3_audius_recent_tracks') || '{}');
@@ -123,10 +129,19 @@ export class AudiusPlayer {
       this.seekBar.max = Math.floor(this.audioEl.duration).toString();
     });
     this.audioEl.addEventListener('error', () => this.handlePlaybackError(this.audioEl.error));
+    this.audioEl.addEventListener('waiting', () => this.watchStreamProgress());
+    this.audioEl.addEventListener('stalled', () => this.watchStreamProgress());
 
     // Seek bar
     this.seekBar.addEventListener('input', () => {
       this.audioEl.currentTime = Number(this.seekBar.value);
+      this.pausedPosition = this.audioEl.currentTime;
+      if (this.streamPlayback) {
+        this.streamPlayback.pendingSeek = null;
+        clearTimeout(this.streamPlayback.watchdog);
+        this.streamPlayback.watchdog = null;
+        this.watchStreamProgress();
+      }
     });
 
     // Volume
@@ -265,6 +280,9 @@ export class AudiusPlayer {
     this.currentTrackIndex = 0;
     this.audioEl.removeAttribute('src');
     this.audioEl.load();
+    this.loadedStreamUrl = null;
+    this.pausedAt = null;
+    this.pausedPosition = 0;
     if (this.sourceMode === 'audius') this.showTrackStatus('Loading tracks...', '');
 
     try {
@@ -381,6 +399,9 @@ export class AudiusPlayer {
 
   play() {
     if (this.sourceMode === 'audius' && (this.isLoading || !this.tracks[this.currentTrackIndex]?.streamUrl)) return;
+    this.cancelFade();
+    this.updateVolume();
+    this.cancelStreamPlayback();
     this.isPlaying = true;
     this.updatePlayBtnState(true);
     this.artWrapperEl.classList.add('playing');
@@ -389,23 +410,96 @@ export class AudiusPlayer {
       this.startAmbientSynth();
     } else {
       const cur = this.tracks[this.currentTrackIndex];
-      const genre = this.activeGenre;
-      if (cur && cur.streamUrl) {
-        if (this.audioEl.src !== cur.streamUrl) {
-          this.audioEl.src = cur.streamUrl;
-        }
-        this.audioEl.play().then(() => {
-          if (this.sourceMode === 'audius' && this.audioEl.src === cur.streamUrl) this.rememberTrack(cur.id, genre);
-        }, err => {
-          if (err.name === 'AbortError' || this.sourceMode !== 'audius' || this.audioEl.src !== cur.streamUrl) return;
-          this.handlePlaybackError(err);
-        });
-      }
+      const sameStream = this.loadedStreamUrl === cur.streamUrl && Boolean(this.audioEl.src);
+      const refresh = sameStream && (Boolean(this.audioEl.error) ||
+        (this.pausedAt !== null && Date.now() - this.pausedAt >= 60000) ||
+        Math.abs(this.audioEl.currentTime - this.pausedPosition) > 0.1);
+      const playback = {
+        track: cur, genre: this.activeGenre, generation: 0, retried: false,
+        position: sameStream ? this.pausedPosition : 0,
+        pendingSeek: null, metadataHandler: null, watchdog: null
+      };
+      this.streamPlayback = playback;
+      this.pausedAt = null;
+      this.startStreamPlayback(playback, refresh);
     }
   }
 
+  cancelStreamPlayback() {
+    const playback = this.streamPlayback;
+    if (!playback) return;
+    clearTimeout(playback.watchdog);
+    if (playback.metadataHandler) this.audioEl.removeEventListener('loadedmetadata', playback.metadataHandler);
+    this.streamPlayback = null;
+  }
+
+  isCurrentPlayback(playback, generation = playback?.generation) {
+    return Boolean(playback && this.streamPlayback === playback && playback.generation === generation &&
+      this.sourceMode === 'audius' && this.isPlaying);
+  }
+
+  startStreamPlayback(playback, refresh) {
+    clearTimeout(playback.watchdog);
+    playback.watchdog = null;
+    if (playback.metadataHandler) this.audioEl.removeEventListener('loadedmetadata', playback.metadataHandler);
+    const generation = ++playback.generation;
+    const { track, genre } = playback;
+    if (refresh || this.loadedStreamUrl !== track.streamUrl || !this.audioEl.src) {
+      const url = new URL(track.streamUrl);
+      if (refresh) {
+        // Re-enter Audius discovery instead of reusing an old redirected stream.
+        url.searchParams.set('_resume', `${Date.now()}-${++this.streamRevision}`);
+        playback.retried = true;
+      }
+      playback.pendingSeek = playback.position > 0 ? playback.position : null;
+      playback.metadataHandler = () => {
+        if (!this.isCurrentPlayback(playback, generation)) return;
+        if (playback.pendingSeek !== null) {
+          const duration = this.audioEl.duration;
+          const position = Number.isFinite(duration) && duration > 0
+            ? Math.min(playback.pendingSeek, Math.max(0, duration - 0.1)) : playback.pendingSeek;
+          this.audioEl.currentTime = position;
+          this.timeCurrentEl.textContent = this.formatTime(position);
+          this.seekBar.value = position.toString();
+          playback.pendingSeek = null;
+        }
+      };
+      this.audioEl.addEventListener('loadedmetadata', playback.metadataHandler, { once: true });
+      this.loadedStreamUrl = track.streamUrl;
+      this.audioEl.src = url.href;
+      this.audioEl.load();
+    }
+    this.watchStreamProgress();
+    this.audioEl.play().then(() => {
+      if (!this.isCurrentPlayback(playback, generation)) return;
+      this.artistEl.textContent = track.artist;
+      this.rememberTrack(track.id, genre);
+    }, error => {
+      if (this.isCurrentPlayback(playback, generation)) this.handlePlaybackError(error);
+    });
+  }
+
+  watchStreamProgress() {
+    const playback = this.streamPlayback;
+    if (!this.isCurrentPlayback(playback) || playback.watchdog !== null) return;
+    playback.progressFrom = playback.pendingSeek ?? this.audioEl.currentTime;
+    playback.watchdog = setTimeout(() => {
+      playback.watchdog = null;
+      if (!this.isCurrentPlayback(playback)) return;
+      // A hidden page can delay timeupdate events even while audio advances.
+      if (playback.pendingSeek === null && this.audioEl.currentTime > playback.progressFrom + 0.05) return;
+      this.handlePlaybackError(new Error('Audio stream stalled'));
+    }, 12000);
+  }
+
   handlePlaybackError(error) {
-    if (this.sourceMode !== 'audius' || !this.isPlaying) return;
+    if (this.sourceMode !== 'audius' || !this.isPlaying || !error || error.name === 'AbortError') return;
+    const playback = this.streamPlayback;
+    if (playback && !playback.retried && error.name !== 'NotAllowedError') {
+      playback.position = playback.pendingSeek ?? this.audioEl.currentTime;
+      this.startStreamPlayback(playback, true);
+      return;
+    }
     console.warn('Audio playback error:', error);
     this.pause();
     this.artistEl.textContent = error?.name === 'NotAllowedError'
@@ -414,6 +508,12 @@ export class AudiusPlayer {
   }
 
   pause() {
+    this.cancelFade();
+    if (this.sourceMode === 'audius') {
+      this.pausedPosition = this.streamPlayback?.pendingSeek ?? this.audioEl.currentTime;
+      if (this.isPlaying) this.pausedAt = Date.now();
+    }
+    this.cancelStreamPlayback();
     this.isPlaying = false;
     this.updatePlayBtnState(false);
     this.artWrapperEl.classList.remove('playing');
@@ -427,12 +527,13 @@ export class AudiusPlayer {
 
   fadeOutAndPause(durationMs = 1000) {
     if (!this.isPlaying) return;
+    this.cancelFade();
     const initialVol = this.audioEl.volume;
     const steps = 20;
     const stepTime = durationMs / steps;
     let currentStep = 0;
 
-    const fadeInterval = setInterval(() => {
+    this.fadeInterval = setInterval(() => {
       currentStep++;
       const factor = 1 - currentStep / steps;
       if (this.sourceMode === 'ambient' && this.ambientGainNode && this.audioCtx) {
@@ -442,7 +543,7 @@ export class AudiusPlayer {
       }
 
       if (currentStep >= steps) {
-        clearInterval(fadeInterval);
+        this.cancelFade();
         this.pause();
         this.updateVolume(); // Restore target volume setting
       }
@@ -451,6 +552,7 @@ export class AudiusPlayer {
 
   fadeInAndPlay(durationMs = 1000) {
     this.play();
+    if (!this.isPlaying) return;
     const targetVol = this.isMuted ? 0 : this.volume;
     const steps = 20;
     const stepTime = durationMs / steps;
@@ -461,7 +563,7 @@ export class AudiusPlayer {
       this.ambientGainNode.gain.setValueAtTime(0, this.audioCtx.currentTime);
     }
 
-    const fadeInterval = setInterval(() => {
+    this.fadeInterval = setInterval(() => {
       currentStep++;
       const factor = currentStep / steps;
       if (this.sourceMode === 'ambient' && this.ambientGainNode && this.audioCtx) {
@@ -471,10 +573,15 @@ export class AudiusPlayer {
       }
 
       if (currentStep >= steps) {
-        clearInterval(fadeInterval);
+        this.cancelFade();
         this.updateVolume();
       }
     }, stepTime);
+  }
+
+  cancelFade() {
+    if (this.fadeInterval !== null) clearInterval(this.fadeInterval);
+    this.fadeInterval = null;
   }
 
   prevTrack() {
@@ -501,6 +608,11 @@ export class AudiusPlayer {
   onTimeUpdate() {
     if (this.sourceMode === 'ambient') return;
     const cur = this.audioEl.currentTime;
+    const playback = this.streamPlayback;
+    if (this.isCurrentPlayback(playback) && playback.pendingSeek === null && cur > playback.progressFrom + 0.05) {
+      clearTimeout(playback.watchdog);
+      playback.watchdog = null;
+    }
     this.timeCurrentEl.textContent = this.formatTime(cur);
     if (!this.seekBar.matches(':active')) {
       this.seekBar.value = Math.floor(cur).toString();

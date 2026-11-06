@@ -37,6 +37,7 @@
 - **Offline Ambient Synthesizer**: Generative Web Audio API noise generator featuring *Binaural Rain & Storm, Brown Noise, Pink Noise, and White Noise*.
 - **Subtle Audio Visualizer**: Live canvas-based frequency spectrum bar visualizer.
 - **Playback Controls**: Seekbar, volume slider with mute, prev/next track, auto-advance on track completion.
+- **Reliable Resume**: After a long pause, the player reconnects the current song and restores your position. Failed or stalled streams retry once without skipping to another track.
 - **Fresh Mixes**: Each load or genre change builds a shuffled mix of up to 15 playable tracks from a pool of up to 100, favoring songs you have not heard recently. Listening history is saved per genre. The queue loads a fresh mix when it ends; **New mix** refreshes it on demand, while pause/resume keeps your place.
 
 ### 3. Persistent Monospace Scratchpad
