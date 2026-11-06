@@ -20,6 +20,10 @@ export class FlowmodoroTimer {
     this.elapsedSeconds = 0; // In flowmodoro focus: count up. In break / classic: remaining seconds.
     this.timerInterval = null;
     this.earnedBreakSeconds = 0;
+    this.lastTickAt = null;
+    this.tickRemainderMs = 0;
+    this.isSyncing = false;
+    this.pausedState = null;
 
     // Daily stats
     this.loadStats();
@@ -136,9 +140,10 @@ export class FlowmodoroTimer {
     if (this.modeSelect) {
       this.modeSelect.value = this.mode;
       this.modeSelect.addEventListener('change', () => {
+        this.reset();
         this.mode = this.modeSelect.value;
         this.saveSettings();
-        this.reset();
+        this.updateUI();
       });
     }
 
@@ -179,6 +184,12 @@ export class FlowmodoroTimer {
         this.toggleFocus();
       }
     });
+
+    // Hidden tabs can delay or suspend interval callbacks. Reconcile immediately
+    // when visibility changes or the browser restores the page.
+    document.addEventListener('visibilitychange', () => this.syncTimer());
+    window.addEventListener('focus', () => this.syncTimer());
+    window.addEventListener('pageshow', () => this.syncTimer());
   }
 
   requestNotificationPermission() {
@@ -254,11 +265,16 @@ export class FlowmodoroTimer {
   }
 
   startFocus() {
-    if (this.state === 'break') {
+    this.syncTimer();
+    if (this.state === 'break' || this.pausedState === 'break') {
       // Switching from break directly to focus
       this.stopTimer();
+      this.elapsedSeconds = 0;
+      this.earnedBreakSeconds = 0;
+      this.tickRemainderMs = 0;
     }
 
+    this.pausedState = null;
     this.state = 'focus';
     this.cardEl.classList.remove('state-break', 'state-idle');
     this.cardEl.classList.add('state-focus');
@@ -280,15 +296,19 @@ export class FlowmodoroTimer {
   }
 
   pause() {
+    this.syncTimer();
+    this.pausedState = this.state;
     this.stopTimer();
     this.state = 'idle';
     this.cardEl.classList.remove('state-focus', 'state-break');
     this.cardEl.classList.add('state-idle');
     this.updateUI();
     this.emitStatusChange();
+    this.saveStats();
   }
 
   startBreak() {
+    this.syncTimer();
     if (this.state === 'break') return;
 
     if (this.mode === 'flowmodoro') {
@@ -310,6 +330,8 @@ export class FlowmodoroTimer {
     this.saveStats();
 
     this.stopTimer();
+    this.tickRemainderMs = 0;
+    this.pausedState = null;
     this.state = 'break';
     this.cardEl.classList.remove('state-focus', 'state-idle');
     this.cardEl.classList.add('state-break');
@@ -327,47 +349,72 @@ export class FlowmodoroTimer {
   }
 
   startTimerInterval() {
-    if (this.timerInterval) clearInterval(this.timerInterval);
+    if (this.timerInterval !== null) clearInterval(this.timerInterval);
+    this.lastTickAt = Date.now();
+    this.timerInterval = setInterval(() => this.syncTimer(), 1000);
+  }
 
-    this.timerInterval = setInterval(() => {
-      if (this.state === 'focus') {
-        if (this.mode === 'flowmodoro') {
-          // Flowmodoro counts UP
-          this.elapsedSeconds++;
-          this.todayFocusSeconds++;
-          if (this.elapsedSeconds % 10 === 0) this.saveStats();
-        } else {
-          // Classic counts DOWN
-          this.elapsedSeconds--;
-          this.todayFocusSeconds++;
-          if (this.elapsedSeconds <= 0) {
-            this.handleClassicFocusComplete();
-            return;
+  syncTimer() {
+    if (this.lastTickAt === null || this.isSyncing) return;
+
+    const now = Date.now();
+    const elapsedMs = Math.max(0, now - this.lastTickAt) + this.tickRemainderMs;
+    let seconds = Math.floor(elapsedMs / 1000);
+    const remainderMs = elapsedMs % 1000;
+    this.lastTickAt = now;
+    this.tickRemainderMs = remainderMs;
+    if (seconds === 0) return;
+
+    this.isSyncing = true;
+    const focusBefore = this.todayFocusSeconds;
+    try {
+      // Apply the whole gap, including any portion of a classic break that
+      // already elapsed before a delayed callback was allowed to run.
+      while (seconds > 0 && this.lastTickAt !== null) {
+        if (this.state === 'focus' && this.mode === 'flowmodoro') {
+          this.elapsedSeconds += seconds;
+          this.todayFocusSeconds += seconds;
+          seconds = 0;
+        } else if (this.state === 'focus' || this.state === 'break') {
+          const used = Math.min(seconds, this.elapsedSeconds);
+          this.elapsedSeconds -= used;
+          seconds -= used;
+          if (this.state === 'focus') this.todayFocusSeconds += used;
+
+          if (this.elapsedSeconds === 0) {
+            if (this.state === 'focus') this.handleClassicFocusComplete();
+            else this.handleBreakComplete();
           }
-        }
-      } else if (this.state === 'break') {
-        // Break always counts DOWN
-        this.elapsedSeconds--;
-        if (this.elapsedSeconds <= 0) {
-          this.handleBreakComplete();
-          return;
+        } else {
+          break;
         }
       }
 
+      if (this.lastTickAt !== null) {
+        this.lastTickAt = now;
+        this.tickRemainderMs = remainderMs;
+      }
+      if (Math.floor(focusBefore / 10) !== Math.floor(this.todayFocusSeconds / 10)) this.saveStats();
       this.updateUI();
       this.emitStatusChange();
-    }, 1000);
-  }
-
-  stopTimer() {
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-      this.timerInterval = null;
+    } finally {
+      this.isSyncing = false;
     }
   }
 
+  stopTimer() {
+    if (this.timerInterval !== null) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
+    this.lastTickAt = null;
+  }
+
   reset() {
+    this.syncTimer();
     this.stopTimer();
+    this.tickRemainderMs = 0;
+    this.pausedState = null;
     this.state = 'idle';
     this.elapsedSeconds = 0;
     this.earnedBreakSeconds = 0;
@@ -375,10 +422,13 @@ export class FlowmodoroTimer {
     this.cardEl.classList.add('state-idle');
     this.updateUI();
     this.emitStatusChange();
+    this.saveStats();
   }
 
   handleBreakComplete() {
     this.stopTimer();
+    this.tickRemainderMs = 0;
+    this.pausedState = null;
     this.state = 'idle';
     this.elapsedSeconds = 0;
     this.cardEl.classList.remove('state-break');
@@ -397,8 +447,6 @@ export class FlowmodoroTimer {
 
   handleClassicFocusComplete() {
     this.stopTimer();
-    this.sessionsCompleted++;
-    this.saveStats();
     this.playZenChime();
     this.notify('Focus Session Done! 🎯', 'Great work. Time to take a well-deserved break!');
     this.startBreak();

@@ -30,6 +30,7 @@
 - **Music Auto-Pause**: Automatically fades down and pauses Audius playback when a break starts.
 - **Harmonic Zen Bell Chime**: Synthesized dual-tone bell using the native Web Audio API (zero external audio files needed).
 - **Daily Focus Tracking**: Preserves total minutes and completed sessions in `localStorage`.
+- **Background Timing**: Measures elapsed time from timestamps, so hidden or minimized windows catch up correctly when browser callbacks resume. Classic focus and break transitions also account for time spent in the background. Alerts may be delayed while the browser suspends the page.
 
 ### 2. Audius Focus Music & Ambient Synthesizer
 - **Zero API Key Stream**: Queries public Audius discovery nodes (`api.audius.co/v1`) for music across ten listening options: *Lo-Fi Beats, Synthwave / Cyberpunk, Ambient & Drone, Deep Focus / Techno, Chiptune / 8-bit, Jazz, Classical, Downtempo, Deep House, and Drum & Bass*.
